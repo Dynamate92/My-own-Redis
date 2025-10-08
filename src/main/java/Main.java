@@ -1,6 +1,4 @@
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 
@@ -20,22 +18,20 @@ public class Main {
   }
 
   static void handleClient(Socket client) {
-    try (Socket c = client;
-         InputStream in = c.getInputStream();
-         OutputStream out = c.getOutputStream()) {
-      byte[] buf = new byte[1024];
-      int n;
+    try (BufferedReader clientInput = new BufferedReader(new InputStreamReader(client.getInputStream()));
+         BufferedWriter clientOutput = new BufferedWriter(
+                 new OutputStreamWriter(client.getOutputStream()));) {
       String content;
-      while ((n = in.read(buf)) != -1) {
-        content = new String(buf, 0, n).trim();
-        if (content.equals("PING")) {
-          out.write("+PONG\r\n".getBytes());
-        } else if (content.startsWith("ECHO")) {
-          String msg = content.substring(4).trim();
-          out.write(("+" + msg + "\r\n").getBytes());
+      while ((content = clientInput.readLine()) != null) {
+        if(content.equalsIgnoreCase("PING")) {
+          clientOutput.write("+PONG\r\n");
+          clientOutput.flush();
+        } else if (content.equalsIgnoreCase("echo")) {
+          String numBytes = clientInput.readLine();
+          clientOutput.write(numBytes + "\r\n" + clientInput.readLine() +
+                  "\r\n");
+          clientOutput.flush();
         }
-
-        out.flush();
       }
     } catch (IOException e) {
       System.out.println("Error" + e.getMessage());
