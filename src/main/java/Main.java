@@ -1,6 +1,7 @@
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.*;
 
 public class Main {
   public static void main(String[] args){
@@ -21,6 +22,7 @@ public class Main {
     try (BufferedReader clientInput = new BufferedReader(new InputStreamReader(client.getInputStream()));
          BufferedWriter clientOutput = new BufferedWriter(
                  new OutputStreamWriter(client.getOutputStream()));) {
+      Map<String, String> commandsStore = new HashMap<>(); // for SET and get
       String content;
       while ((content = clientInput.readLine()) != null) {
         if(content.equalsIgnoreCase("PING")) {
@@ -31,6 +33,25 @@ public class Main {
           clientOutput.write(numBytes + "\r\n" + clientInput.readLine() +
                   "\r\n");
           clientOutput.flush();
+        } else if (content.equalsIgnoreCase("set")) {
+          clientInput.readLine(); // $ceva
+          String key = clientInput.readLine(); // $cheia cautata
+          clientInput.readLine(); // $skip
+          String value = clientInput.readLine(); // $valoarea cautata
+          commandsStore.put(key,value);
+          clientOutput.write("+OK\r\n");
+          clientOutput.flush();
+        } else if (content.equalsIgnoreCase("get")) {
+          clientInput.readLine(); // $skip
+          String key = clientInput.readLine();
+          String value = clientInput.readLine();
+          if(value != null) {
+            clientOutput.write("$" + value.length()+ "\r\n" + value + "\r\n");
+            clientOutput.flush();
+          } else {
+            clientOutput.write("$-1\r\n");
+            clientOutput.flush();
+          }
         }
       }
     } catch (IOException e) {
