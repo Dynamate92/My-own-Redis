@@ -26,7 +26,7 @@ public class Main {
       byte[] buf = new byte[1024];
       int n;
       String content;
-      while ((n = in.read(buf)) != 1) {
+      while ((n = in.read(buf)) != -1) {
         content = new String(buf, 0, n).trim();
         if (content.equals("PING")) {
           out.write("+PONG\r\n".getBytes());
@@ -34,7 +34,7 @@ public class Main {
           String msg = content.substring(4).trim();
           out.write(("+" + msg + "\r\n").getBytes());
         }
-        
+
         out.flush();
       }
     } catch (IOException e) {
