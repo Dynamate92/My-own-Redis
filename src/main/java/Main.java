@@ -44,7 +44,7 @@ public class Main {
         } else if (content.equalsIgnoreCase("get")) {
           clientInput.readLine(); // $skip
           String key = clientInput.readLine();
-          String value = clientInput.readLine();
+          String value = commandsStore.get(key);
           if(value != null) {
             clientOutput.write("$" + value.length()+ "\r\n" + value + "\r\n");
             clientOutput.flush();
