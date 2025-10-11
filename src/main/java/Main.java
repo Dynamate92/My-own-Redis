@@ -170,42 +170,41 @@ public class Main {
           }
           clientOutput.flush();
         } else if (content.equalsIgnoreCase("lpush")) {
-          // $len + key
-          clientInput.readLine();
-          String key = clientInput.readLine();
+          // total elemente in array = 1 (comanda) + 1 (key) + k valori
+          int valuesToRead = Math.max(0, currentArrayCount - 2);
 
-          // găsim sau creăm lista
+          // key
+          clientInput.readLine();               // $<len> pentru key
+          String key = clientInput.readLine();  // key
+
+          // lista existenta sau noua
           List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
 
-          // vrem să inserăm de la stânga la dreapta,
-          // dar LPUSH pune primul element la început.
-          // soluție: citim toate valorile, apoi le adăugăm invers.
-          List<String> newValues = new ArrayList<>();
-
-          String lenLine;
-          while ((lenLine = clientInput.readLine()) != null) {
-            if (!lenLine.startsWith("$")) {
-              // următoarea comandă începe (nu mai avem argumente)
-              break;
-            }
-            int len = Integer.parseInt(lenLine.substring(1));
-            char[] buf = new char[len];
-            int read = clientInput.read(buf, 0, len);
-            String value = new String(buf, 0, read);
-            clientInput.readLine(); // consumă \r\n
-            newValues.add(value);
+          // citim FIX valuesToRead valori
+          List<String> vals = new ArrayList<>(valuesToRead);
+          for (int i = 0; i < valuesToRead; i++) {
+            clientInput.readLine();                // $<len> pentru value
+            String v = clientInput.readLine();     // value
+            vals.add(v);
           }
 
-          // LPUSH: adaugă invers (ultimul citit devine primul în listă)
-          for (int i = newValues.size() - 1; i >= 0; i--) {
-            list.add(0, newValues.get(i));
+          // lpush: insereaza la inceput pastrand ordinea LPUSH (ultimul citit ajunge cel mai stang)
+          for (int i = 0; i < vals.size(); i++) {
+            // varianta corecta pt LPUSH: primul argument dupa key trebuie sa ajunga cel mai la stanga
+            // deci inseram in ORDINE inversa in lista
+            // ex: LPUSH key a b c => lista: c, b, a
+            // ca sa obtinem asta cu add(0,...), iteram de la 0 la n-1 si facem add(0, vals.get(i))? asta ar pune a,b,c -> c,b,a (corect)
+            list.add(0, vals.get(i));
           }
 
           listsStore.put(key, list);
 
-          // răspuns: noua lungime
+          // raspuns integer cu noua lungime
           clientOutput.write(":" + list.size() + "\r\n");
           clientOutput.flush();
+
+          // reset pt urmatoarea comanda
+          currentArrayCount = -1;
         }
       }
     } catch (IOException e) {
