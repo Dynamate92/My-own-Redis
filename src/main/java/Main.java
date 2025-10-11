@@ -73,6 +73,8 @@ public class Main {
           if (exp != null && System.currentTimeMillis() >= exp) {
             expiries.remove(key);
             commandsStore.remove(key);
+            clientOutput.write("$-1\r\n");
+            clientOutput.flush();
           }
           String value = commandsStore.get(key);
           if(value != null) {
