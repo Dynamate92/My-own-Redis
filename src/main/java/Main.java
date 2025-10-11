@@ -211,7 +211,8 @@ public class Main {
 
           List<String> list = listsStore.get(key);
 
-          int len = list.size();
+          int len;
+          len = (list == null) ? 0 : list.size();
 
           clientOutput.write(":" + len + "\r\n");
           clientOutput.flush();
