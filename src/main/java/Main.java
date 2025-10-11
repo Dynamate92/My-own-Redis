@@ -36,36 +36,37 @@ public class Main {
                   "\r\n");
           clientOutput.flush();
         } else if (content.equalsIgnoreCase("set")) {
-          clientInput.readLine();                // $len (pentru key)
-          String key = clientInput.readLine();   // key
-          clientInput.readLine();                // $len (pentru value)
-          String value = clientInput.readLine(); // value
+          clientInput.readLine();              // $len key
+          String key = clientInput.readLine(); // key
+          clientInput.readLine();              // $len val
+          String value = clientInput.readLine();// val
 
           Long expireAt = null;
 
-          clientInput.mark(1024);
-          String maybeLen = clientInput.readLine();
-          if (maybeLen != null && maybeLen.startsWith("$")) {
-            String opt = clientInput.readLine();     // EX sau PX
-            String ttlLen = clientInput.readLine();  // $<len> pentru ttl (nu-l folosim, doar consumam)
-            String ttlStr = clientInput.readLine();  // "100" / "10" etc.
-            try {
-              long ttl = Long.parseLong(ttlStr);
-              long now = System.currentTimeMillis();
-              if ("ex".equalsIgnoreCase(opt)) {
-                expireAt = now + ttl * 1000L;
-              } else if ("px".equalsIgnoreCase(opt)) {
-                expireAt = now + ttl;
+          // lookahead doar daca mai sunt caractere gata de citit (altfel nu are optiuni)
+          if (clientInput.ready()) {
+            clientInput.mark(1024);
+            String maybeLen = clientInput.readLine();
+            if (maybeLen != null && maybeLen.startsWith("$")) {
+              String opt = clientInput.readLine();     // EX / PX
+              String ttlLen = clientInput.readLine();  // $<len>
+              String ttlStr = clientInput.readLine();  // "100" etc.
+              try {
+                long ttl = Long.parseLong(ttlStr);
+                long now = System.currentTimeMillis();
+                if ("ex".equalsIgnoreCase(opt)) expireAt = now + ttl * 1000L;
+                else if ("px".equalsIgnoreCase(opt)) expireAt = now + ttl;
+              } catch (NumberFormatException e) {
+                System.out.println("Error " + e);
               }
-            } catch (NumberFormatException e) {
-              System.out.println("Error " + e);
+            } else {
+              clientInput.reset(); // nu era o optiune, revenim
             }
-          } else {
-            clientInput.reset(); // nu exista optiuni, revino la linia anterioara
           }
+
           commandsStore.put(key, value);
-          if (expireAt != null) expiries.put(key, expireAt);
-          else expiries.remove(key);
+          if (expireAt != null) expiries.put(key, expireAt); else expiries.remove(key);
+
           clientOutput.write("+OK\r\n");
           clientOutput.flush();
         } else if (content.equalsIgnoreCase("get")) {
