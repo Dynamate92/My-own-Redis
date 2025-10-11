@@ -90,11 +90,21 @@ public class Main {
         } else if (content.equalsIgnoreCase(("rpush"))) {
             clientInput.readLine();
             String key = clientInput.readLine();
-            clientInput.readLine();
-            String value = clientInput.readLine();
 
             List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
-            list.add(value);
+
+            String lenLine;
+            while ((lenLine = clientInput.readLine()) != null) {
+              if(!lenLine.startsWith("$")) {
+                break;
+              }
+              int len = Integer.parseInt(lenLine.substring(1));
+              char[] buf = new char[len];
+              int read = clientInput.read(buf, 0, len);
+              String value = new String(buf, 0, read);
+              clientInput.readLine();
+              list.add(value);
+            }
             listsStore.put(key, list);
 
             int newLength = list.size();
