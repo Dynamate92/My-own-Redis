@@ -123,32 +123,52 @@ public class Main {
           // reset pentru urmatoarea comanda
           currentArrayCount = -1;
         } else if (content.equalsIgnoreCase("lrange")) {
+          // $len + key
           clientInput.readLine();
           String key = clientInput.readLine();
 
+          // $len + start
           clientInput.readLine();
           String startStr = clientInput.readLine();
 
+          // $len + stop
           clientInput.readLine();
-          String endStr = clientInput.readLine();
+          String stopStr = clientInput.readLine();
 
           int start = Integer.parseInt(startStr);
-          int stop = Integer.parseInt(endStr);
+          int stop = Integer.parseInt(stopStr);
 
           List<String> list = listsStore.get(key);
+          if (list == null) {
+            // lista nu exista -> raspuns gol
+            clientOutput.write("*0\r\n");
+            clientOutput.flush();
+            continue;
+          }
 
           int size = list.size();
 
+          // normalizeaza indicii
           if (start < 0) start = size + start;
           if (stop < 0) stop = size + stop;
+          if (start < 0) start = 0;
           if (stop >= size) stop = size - 1;
 
-          int count = stop - start - 1;
+          // daca range invalid → lista goala
+          if (start > stop || start >= size) {
+            clientOutput.write("*0\r\n");
+            clientOutput.flush();
+            continue;
+          }
+
+          // trimite raspunsul ca array RESP
+          int count = stop - start + 1;
           clientOutput.write("*" + count + "\r\n");
-          for (int i = start; i < stop; i++) {
+          for (int i = start; i <= stop; i++) {
             String val = list.get(i);
             clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
           }
+          clientOutput.flush();
         }
       }
     } catch (IOException e) {
