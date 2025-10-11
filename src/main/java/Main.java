@@ -36,32 +36,34 @@ public class Main {
                   "\r\n");
           clientOutput.flush();
         } else if (content.equalsIgnoreCase("set")) {
-          String contextExpire;
-          clientInput.readLine(); // $ceva
-          String key = clientInput.readLine(); // $cheia cautata
-          clientInput.readLine(); // $skip
-          String value = clientInput.readLine(); // $valoarea cautata
-          clientInput.readLine(); // $skip
+          clientInput.readLine();                // $len (pentru key)
+          String key = clientInput.readLine();   // key
+          clientInput.readLine();                // $len (pentru value)
+          String value = clientInput.readLine(); // value
+
           Long expireAt = null;
+
           clientInput.mark(1024);
           String maybeLen = clientInput.readLine();
-          if(maybeLen != null && maybeLen.startsWith("$")) {
-            String opt = clientInput.readLine();
-            clientInput.readLine();
-            String ttlStr = clientInput.readLine();
+          if (maybeLen != null && maybeLen.startsWith("$")) {
+            String opt = clientInput.readLine();     // EX sau PX
+            String ttlLen = clientInput.readLine();  // $<len> pentru ttl (nu-l folosim, doar consumam)
+            String ttlStr = clientInput.readLine();  // "100" / "10" etc.
             try {
               long ttl = Long.parseLong(ttlStr);
               long now = System.currentTimeMillis();
-              if (opt.equalsIgnoreCase("ex")) {
+              if ("ex".equalsIgnoreCase(opt)) {
                 expireAt = now + ttl * 1000L;
-              } else if (opt.equalsIgnoreCase("px")) {
+              } else if ("px".equalsIgnoreCase(opt)) {
                 expireAt = now + ttl;
               }
             } catch (NumberFormatException e) {
-              System.out.println("Error" + e);
+              System.out.println("Error " + e);
             }
+          } else {
+            clientInput.reset(); // nu exista optiuni, revino la linia anterioara
           }
-          commandsStore.put(key,value);
+          commandsStore.put(key, value);
           if (expireAt != null) expiries.put(key, expireAt);
           else expiries.remove(key);
           clientOutput.write("+OK\r\n");
@@ -73,8 +75,7 @@ public class Main {
           if (exp != null && System.currentTimeMillis() >= exp) {
             expiries.remove(key);
             commandsStore.remove(key);
-            clientOutput.write("$-1\r\n");
-            clientOutput.flush();
+
           }
           String value = commandsStore.get(key);
           if(value != null) {
