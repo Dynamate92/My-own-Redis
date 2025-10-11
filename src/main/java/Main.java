@@ -87,29 +87,36 @@ public class Main {
             clientOutput.write("$-1\r\n");
             clientOutput.flush();
           }
-        } else if (content.equalsIgnoreCase(("rpush"))) {
-            clientInput.readLine();
-            String key = clientInput.readLine();
+        } else if (content.equalsIgnoreCase("rpush")) {
+          clientInput.readLine();                // $len pentru key
+          String key = clientInput.readLine();   // key
 
-            List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
+          // lista unde vom pune elementele
+          List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
 
-            String lenLine;
-            while ((lenLine = clientInput.readLine()) != null) {
-              if(!lenLine.startsWith("$")) {
-                break;
-              }
-              int len = Integer.parseInt(lenLine.substring(1));
-              char[] buf = new char[len];
-              int read = clientInput.read(buf, 0, len);
-              String value = new String(buf, 0, read);
-              clientInput.readLine();
-              list.add(value);
+          // citim restul argumentelor până la finalul comenzii
+          String lenLine;
+          while ((lenLine = clientInput.readLine()) != null) {
+            // dacă linia nu începe cu "$", înseamnă că s-a terminat comanda (următoarea e un nou *<n>)
+            if (!lenLine.startsWith("$")) {
+              // linia asta aparține următoarei comenzi, o lăsăm în buffer
+              break;
             }
-            listsStore.put(key, list);
+            int len = Integer.parseInt(lenLine.substring(1)); // lungimea elementului
+            char[] buf = new char[len];
+            int read = clientInput.read(buf, 0, len);
+            String value = new String(buf, 0, read);
+            clientInput.readLine(); // consumă \r\n
 
-            int newLength = list.size();
-            clientOutput.write(":" + newLength + "\r\n");
-            clientOutput.flush();
+            list.add(value);
+          }
+
+          listsStore.put(key, list);
+
+          // răspuns: noua lungime a listei
+          int newLength = list.size();
+          clientOutput.write(":" + newLength + "\r\n");
+          clientOutput.flush();
         }
       }
     } catch (IOException e) {
