@@ -122,6 +122,33 @@ public class Main {
 
           // reset pentru urmatoarea comanda
           currentArrayCount = -1;
+        } else if (content.equalsIgnoreCase("lrange")) {
+          clientInput.readLine();
+          String key = clientInput.readLine();
+
+          clientInput.readLine();
+          String startStr = clientInput.readLine();
+
+          clientInput.readLine();
+          String endStr = clientInput.readLine();
+
+          int start = Integer.parseInt(startStr);
+          int stop = Integer.parseInt(endStr);
+
+          List<String> list = listsStore.get(key);
+
+          int size = list.size();
+
+          if (start < 0) start = size + start;
+          if (stop < 0) stop = size + stop;
+          if (stop >= size) stop = size - 1;
+
+          int count = stop - start - 1;
+          clientOutput.write("*" + count + "\r\n");
+          for (int i = start; i < stop; i++) {
+            String val = list.get(i);
+            clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
+          }
         }
       }
     } catch (IOException e) {
