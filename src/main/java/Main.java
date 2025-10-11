@@ -170,31 +170,42 @@ public class Main {
           }
           clientOutput.flush();
         } else if (content.equalsIgnoreCase("lpush")) {
-            clientInput.readLine();
-            String key = clientInput.readLine();
+          // $len + key
+          clientInput.readLine();
+          String key = clientInput.readLine();
 
-            List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
+          // găsim sau creăm lista
+          List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
 
-            List<String> newValues = new ArrayList<>();
-            String lenLine;
-            while((lenLine = clientInput.readLine()) != null) {
-              if (!lenLine.startsWith("$")) {
-                break;
-              }
-              int len = Integer.parseInt(lenLine.substring(1));
-              char[] buf = new char[len];
-              int read = clientInput.read(buf,0,len);
-              String value = new String(buf, 0, read);
-              clientInput.readLine(); // consumă \r\n
-              newValues.add(value);
+          // vrem să inserăm de la stânga la dreapta,
+          // dar LPUSH pune primul element la început.
+          // soluție: citim toate valorile, apoi le adăugăm invers.
+          List<String> newValues = new ArrayList<>();
+
+          String lenLine;
+          while ((lenLine = clientInput.readLine()) != null) {
+            if (!lenLine.startsWith("$")) {
+              // următoarea comandă începe (nu mai avem argumente)
+              break;
             }
-            for (int i = newValues.size() - 1; i >= 0; i--) {
-              list.add(0, newValues.get(i));
-            }
-            listsStore.put(key, list);
+            int len = Integer.parseInt(lenLine.substring(1));
+            char[] buf = new char[len];
+            int read = clientInput.read(buf, 0, len);
+            String value = new String(buf, 0, read);
+            clientInput.readLine(); // consumă \r\n
+            newValues.add(value);
+          }
 
-            clientOutput.write(":" + list.size() + "\r\n");
-            clientOutput.flush();
+          // LPUSH: adaugă invers (ultimul citit devine primul în listă)
+          for (int i = newValues.size() - 1; i >= 0; i--) {
+            list.add(0, newValues.get(i));
+          }
+
+          listsStore.put(key, list);
+
+          // răspuns: noua lungime
+          clientOutput.write(":" + list.size() + "\r\n");
+          clientOutput.flush();
         }
       }
     } catch (IOException e) {
