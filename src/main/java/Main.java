@@ -27,7 +27,14 @@ public class Main {
       Map<String, Long> expiries = new HashMap<>();
       Map<String, List<String>> listsStore = new HashMap<>();
       String content;
+      int currentArrayCount = -1;
       while ((content = clientInput.readLine()) != null) {
+        if (content.startsWith("*")) {
+          try {
+            currentArrayCount = Integer.parseInt(content.substring(1).trim());
+            continue; // mergi la următoarea linie ($len sau comanda)
+          } catch (NumberFormatException ignored) {}
+        }
         if(content.equalsIgnoreCase("PING")) {
           clientOutput.write("+PONG\r\n");
           clientOutput.flush();
@@ -88,35 +95,33 @@ public class Main {
             clientOutput.flush();
           }
         } else if (content.equalsIgnoreCase("rpush")) {
-          clientInput.readLine();                // $len pentru key
-          String key = clientInput.readLine();   // key
+          // stim exact cate argumente urmeaza in aceasta comanda:
+          // currentArrayCount = 1 (comanda) + 1 (key) + k (valori)
+          // deci k = currentArrayCount - 2
+          int valuesToRead = Math.max(0, currentArrayCount - 2);
 
-          // lista unde vom pune elementele
+          // key
+          clientInput.readLine();               // $<len> key
+          String key = clientInput.readLine();  // key
+
+          // asigura lista
           List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
 
-          // citim restul argumentelor până la finalul comenzii
-          String lenLine;
-          while ((lenLine = clientInput.readLine()) != null) {
-            // dacă linia nu începe cu "$", înseamnă că s-a terminat comanda (următoarea e un nou *<n>)
-            if (!lenLine.startsWith("$")) {
-              // linia asta aparține următoarei comenzi, o lăsăm în buffer
-              break;
-            }
-            int len = Integer.parseInt(lenLine.substring(1)); // lungimea elementului
-            char[] buf = new char[len];
-            int read = clientInput.read(buf, 0, len);
-            String value = new String(buf, 0, read);
-            clientInput.readLine(); // consumă \r\n
-
+          // citeste exact k valori (fara blocaj)
+          for (int i = 0; i < valuesToRead; i++) {
+            clientInput.readLine();                 // $<len> value
+            String value = clientInput.readLine();  // value
             list.add(value);
           }
 
           listsStore.put(key, list);
 
-          // răspuns: noua lungime a listei
-          int newLength = list.size();
-          clientOutput.write(":" + newLength + "\r\n");
+          // raspuns integer cu noua lungime
+          clientOutput.write(":" + list.size() + "\r\n");
           clientOutput.flush();
+
+          // reset pentru urmatoarea comanda
+          currentArrayCount = -1;
         }
       }
     } catch (IOException e) {
