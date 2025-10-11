@@ -169,6 +169,32 @@ public class Main {
             clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
           }
           clientOutput.flush();
+        } else if (content.equalsIgnoreCase("lpush")) {
+            clientInput.readLine();
+            String key = clientInput.readLine();
+
+            List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
+
+            List<String> newValues = new ArrayList<>();
+            String lenLine;
+            while((lenLine = clientInput.readLine()) != null) {
+              if (!lenLine.startsWith("$")) {
+                break;
+              }
+              int len = Integer.parseInt(lenLine.substring(1));
+              char[] buf = new char[len];
+              int read = clientInput.read(buf,0,len);
+              String value = new String(buf, 0, read);
+              clientInput.readLine(); // consumă \r\n
+              newValues.add(value);
+            }
+            for (int i = newValues.size() - 1; i >= 0; i--) {
+              list.add(0, newValues.get(i));
+            }
+            listsStore.put(key, list);
+
+            clientOutput.write(":" + list.size() + "\r\n");
+            clientOutput.flush();
         }
       }
     } catch (IOException e) {
