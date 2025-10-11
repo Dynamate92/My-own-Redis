@@ -205,6 +205,16 @@ public class Main {
 
           // reset pt urmatoarea comanda
           currentArrayCount = -1;
+        } else if (content.equalsIgnoreCase("llen")) {
+          clientInput.readLine();
+          String key = clientInput.readLine();
+
+          List<String> list = listsStore.get(key);
+
+          int len = list.size();
+
+          clientOutput.write(":" + len + "\r\n");
+          clientOutput.flush();
         }
       }
     } catch (IOException e) {
