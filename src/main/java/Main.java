@@ -25,6 +25,7 @@ public class Main {
                  new OutputStreamWriter(client.getOutputStream()));) {
       Map<String, String> commandsStore = new HashMap<>(); // for SET and get
       Map<String, Long> expiries = new HashMap<>();
+      Map<String, List<String>> listsStore = new HashMap<>();
       String content;
       while ((content = clientInput.readLine()) != null) {
         if(content.equalsIgnoreCase("PING")) {
@@ -86,6 +87,19 @@ public class Main {
             clientOutput.write("$-1\r\n");
             clientOutput.flush();
           }
+        } else if (content.equalsIgnoreCase(("rpush"))) {
+            clientInput.readLine();
+            String key = clientInput.readLine();
+            clientInput.readLine();
+            String value = clientInput.readLine();
+
+            List<String> list = listsStore.getOrDefault(key, new ArrayList<>());
+            list.add(value);
+            listsStore.put(key, list);
+
+            int newLength = list.size();
+            clientOutput.write(":" + newLength + "\r\n");
+            clientOutput.flush();
         }
       }
     } catch (IOException e) {
