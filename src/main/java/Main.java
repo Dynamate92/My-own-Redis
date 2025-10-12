@@ -217,20 +217,53 @@ public class Main {
           clientOutput.write(":" + len + "\r\n");
           clientOutput.flush();
         } else if (content.equalsIgnoreCase("lpop")) {
-          clientInput.readLine();
-          String key = clientInput.readLine();
-          List<String> list = listsStore.get(key);
+          clientInput.readLine();               // $len
+          String key = clientInput.readLine();  // key
 
+          List<String> list = listsStore.get(key);
           if (list == null || list.isEmpty()) {
-            clientOutput.write("$-1\r\n");
+            clientOutput.write("*0\r\n");
             clientOutput.flush();
-          } else {
-            String value = list.remove(0);
-            clientOutput.write("$" + value.length() + "\r\n" + value + "\r\n");
-            clientOutput.flush();
+            continue;
           }
 
+          int count = 1; // default: scoate un element
 
+          // vezi dacă urmează și un număr
+          clientInput.mark(1024);
+          String maybeLen = clientInput.readLine();
+          if (maybeLen != null && maybeLen.startsWith("$")) {
+            String countStr = clientInput.readLine();
+            try {
+              count = Integer.parseInt(countStr);
+            } catch (NumberFormatException e) {
+              count = 1;
+            }
+          } else {
+            clientInput.reset();
+          }
+
+          List<String> popped = new ArrayList<>();
+
+          while (count > 0 && !list.isEmpty()) {
+            popped.add(list.remove(0));
+            count--;
+          }
+
+          if (list.isEmpty()) listsStore.remove(key);
+
+          if (popped.size() == 1) {
+            // un singur element → bulk string
+            String val = popped.get(0);
+            clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
+          } else {
+            // mai multe elemente → array RESP
+            clientOutput.write("*" + popped.size() + "\r\n");
+            for (String val : popped) {
+              clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
+            }
+          }
+          clientOutput.flush();
         }
       }
     } catch (IOException e) {
