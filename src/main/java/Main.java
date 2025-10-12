@@ -216,6 +216,21 @@ public class Main {
 
           clientOutput.write(":" + len + "\r\n");
           clientOutput.flush();
+        } else if (content.equalsIgnoreCase("lpop")) {
+          clientInput.readLine();
+          String key = clientInput.readLine();
+          List<String> list = listsStore.get(key);
+
+          if (list == null || list.isEmpty()) {
+            clientOutput.write("$-1\r\n");
+            clientOutput.flush();
+          } else {
+            String value = list.remove(0);
+            clientOutput.write("$" + value.length() + "\r\n" + value + "\r\n");
+            clientOutput.flush();
+          }
+
+
         }
       }
     } catch (IOException e) {
