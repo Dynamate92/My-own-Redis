@@ -217,53 +217,57 @@ public class Main {
           clientOutput.write(":" + len + "\r\n");
           clientOutput.flush();
         } else if (content.equalsIgnoreCase("lpop")) {
+          // *2 => LPOP key
+          // *3 => LPOP key count
+          boolean hasCount = (currentArrayCount == 3);
+
+          // key
           clientInput.readLine();               // $len
           String key = clientInput.readLine();  // key
 
+          int count = 1;
+          if (hasCount) {
+            clientInput.readLine();             // $len
+            String countStr = clientInput.readLine();
+            try { count = Integer.parseInt(countStr); } catch (NumberFormatException ignore) { count = 1; }
+            if (count < 0) count = 0; // defensiv
+          }
+
           List<String> list = listsStore.get(key);
-          if (list == null || list.isEmpty()) {
-            clientOutput.write("*0\r\n");
+
+          if (list == null || list.isEmpty() || count == 0) {
+            // raspuns diferit in functie de prezenta lui count (conform Redis 6.2):
+            if (hasCount) {
+              clientOutput.write("*0\r\n");        // array gol
+            } else {
+              clientOutput.write("$-1\r\n");       // nil bulk
+            }
             clientOutput.flush();
+            currentArrayCount = -1;
             continue;
           }
 
-          int count = 1; // default: scoate un element
-
-          // vezi dacă urmează și un număr
-          clientInput.mark(1024);
-          String maybeLen = clientInput.readLine();
-          if (maybeLen != null && maybeLen.startsWith("$")) {
-            String countStr = clientInput.readLine();
-            try {
-              count = Integer.parseInt(countStr);
-            } catch (NumberFormatException e) {
-              count = 1;
-            }
-          } else {
-            clientInput.reset();
-          }
-
-          List<String> popped = new ArrayList<>();
-
-          while (count > 0 && !list.isEmpty()) {
+          int toPop = Math.min(count, list.size());
+          List<String> popped = new ArrayList<>(toPop);
+          for (int i = 0; i < toPop; i++) {
             popped.add(list.remove(0));
-            count--;
           }
-
           if (list.isEmpty()) listsStore.remove(key);
 
-          if (popped.size() == 1) {
-            // un singur element → bulk string
-            String val = popped.get(0);
-            clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
-          } else {
-            // mai multe elemente → array RESP
+          // raspuns:
+          if (hasCount) {
+            // cand exista 'count', raspunsul este INTOTDEAUNA un array
             clientOutput.write("*" + popped.size() + "\r\n");
-            for (String val : popped) {
-              clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
+            for (String v : popped) {
+              clientOutput.write("$" + v.length() + "\r\n" + v + "\r\n");
             }
+          } else {
+            // fara 'count' -> bulk string sau nil (deja tratat mai sus)
+            String v = popped.get(0);
+            clientOutput.write("$" + v.length() + "\r\n" + v + "\r\n");
           }
           clientOutput.flush();
+          currentArrayCount = -1;
         }
       }
     } catch (IOException e) {
