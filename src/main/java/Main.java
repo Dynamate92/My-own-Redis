@@ -3,8 +3,24 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.*;
+
+
 
 public class Main {
+  static final Map<String , List<String>> SHARED_LIST = Collections.synchronizedMap(new HashMap<>());
+  static final Map<String, Deque<WaitingClient>> WAITERS = new ConcurrentHashMap<>();
+
+  static class WaitingClient {
+    final Socket socket;
+    final BufferedWriter out;
+    final String key;
+    WaitingClient(Socket socket, BufferedWriter out, String key) {
+      this.socket = socket;
+      this.out = out;
+      this.key = key;
+    }
+  }
   public static void main(String[] args){
     int port = 6379;
     try (ServerSocket serverSocket = new ServerSocket(port)) {
@@ -26,6 +42,7 @@ public class Main {
       Map<String, String> commandsStore = new HashMap<>(); // for SET and get
       Map<String, Long> expiries = new HashMap<>();
       Map<String, List<String>> listsStore = new HashMap<>();
+      listsStore = SHARED_LIST;
       String content;
       int currentArrayCount = -1;
       while ((content = clientInput.readLine()) != null) {
@@ -268,7 +285,86 @@ public class Main {
           }
           clientOutput.flush();
           currentArrayCount = -1;
+        } else if (content.equalsIgnoreCase("blpop")) {
+          // format in aceasta etapa: BLPOP key 0 (timeout 0 = asteapta indefinit)
+
+          // citeste key
+          clientInput.readLine();              // $len key
+          String key = clientInput.readLine(); // key
+
+          // citeste timeout (ignoram, e 0)
+          clientInput.readLine();              // $len timeout
+          String timeoutStr = clientInput.readLine(); // "0"
+
+          // 1) incercare imediata: daca lista are elemente, raspunde ca LPOP
+          List<String> list = listsStore.get(key);
+          if (list != null) {
+            synchronized (list) {
+              if (!list.isEmpty()) {
+                String val = list.remove(0);
+                if (list.isEmpty()) listsStore.remove(key);
+
+                clientOutput.write("*2\r\n");
+                clientOutput.write("$" + key.length() + "\r\n" + key + "\r\n");
+                clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
+                clientOutput.flush();
+                currentArrayCount = -1;
+                continue;
+              }
+            }
+          }
+
+          // 2) altfel: te pui in coada de asteptare pentru acest key
+          WAITERS.putIfAbsent(key, new ArrayDeque<>());
+          Deque<WaitingClient> q = WAITERS.get(key);
+          WaitingClient me = new WaitingClient(client, clientOutput, key);
+          synchronized (q) {
+            q.addLast(me);
+          }
+
+          // 3) asteapta prin polling scurt (nu modificam RPUSH)
+          while (true) {
+            // daca sunt primul in coada pt acest key, incerc sa consum un element
+            boolean iAmHead;
+            synchronized (q) { iAmHead = (q.peekFirst() == me); }
+
+            if (iAmHead) {
+              list = listsStore.get(key);
+              String val = null;
+              if (list != null) {
+                synchronized (list) {
+                  if (!list.isEmpty()) {
+                    val = list.remove(0);
+                    if (list.isEmpty()) listsStore.remove(key);
+                  }
+                }
+              }
+              if (val != null) {
+                synchronized (q) { q.pollFirst(); } // ies din coada (fifo)
+                try {
+                  clientOutput.write("*2\r\n");
+                  clientOutput.write("$" + key.length() + "\r\n" + key + "\r\n");
+                  clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
+                  clientOutput.flush();
+                } catch (IOException ignore) {}
+                currentArrayCount = -1;
+                break; // am raspuns clientului
+              }
+            }
+
+            // mic sleep ca sa nu arda cpu
+            try { Thread.sleep(10); } catch (InterruptedException ignore) {}
+
+            // daca socketul s-a inchis intre timp, ies din coada si opresc
+            if (client.isClosed()) {
+              synchronized (q) { q.remove(me); }
+              break;
+            }
+          }
+
+          continue;
         }
+
       }
     } catch (IOException e) {
       System.out.println("Error" + e.getMessage());
