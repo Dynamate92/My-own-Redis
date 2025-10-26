@@ -286,30 +286,22 @@ public class Main {
           clientOutput.flush();
           currentArrayCount = -1;
         } else if (content.equalsIgnoreCase("blpop")) {
-          // formatul testat aici: BLPOP key <timeoutSec>  (timeout poate fi 0, 0.1, 0.5, 1 etc.)
-
-          // citeste key
+          // BLPOP key timeoutSec (timeout poate fi 0 sau non-zero)
           clientInput.readLine();              // $len key
           String key = clientInput.readLine(); // key
-
-          // citeste timeout
           clientInput.readLine();              // $len timeout
-          String timeoutStr = clientInput.readLine(); // ex: "0", "0.1", "1"
+          String timeoutStr = clientInput.readLine();
+
           double timeoutSec;
-          try {
-            timeoutSec = Double.parseDouble(timeoutStr);
-          } catch (NumberFormatException nfe) {
-            timeoutSec = 0.0; // fallback defensiv
-          }
+          try { timeoutSec = Double.parseDouble(timeoutStr); } catch (NumberFormatException e) { timeoutSec = 0.0; }
 
-          // incearca imediat: daca lista are elemente, raspunde ca LPOP
-          List<String> list = listsStore.get(key);
-          if (list != null) {
-            synchronized (list) {
-              if (!list.isEmpty()) {
-                String val = list.remove(0);
-                if (list.isEmpty()) listsStore.remove(key);
-
+          // incercare imediata (ca lpop)
+          List<String> listNow = listsStore.get(key);
+          if (listNow != null) {
+            synchronized (listNow) {
+              if (!listNow.isEmpty()) {
+                String val = listNow.remove(0);
+                if (listNow.isEmpty()) listsStore.remove(key);
                 clientOutput.write("*2\r\n");
                 clientOutput.write("$" + key.length() + "\r\n" + key + "\r\n");
                 clientOutput.write("$" + val.length() + "\r\n" + val + "\r\n");
@@ -320,38 +312,34 @@ public class Main {
             }
           }
 
-          // daca timeout == 0 → asteptare indefinita (comportament ca in etapa anterioara)
-          // daca timeout > 0 → asteapta pana la deadline si apoi intoarce null array
-          long nowNs = System.nanoTime();
-          long waitNs = (timeoutSec <= 0.0) ? Long.MAX_VALUE : (long) (timeoutSec * 1_000_000_000L);
-          long deadlineNs = nowNs + waitNs;
-
-          // pune clientul in coada FIFO pentru acest key (pt fairness)
+          // pune clientul in coada fifo pt key
           WAITERS.putIfAbsent(key, new ArrayDeque<>());
           Deque<WaitingClient> q = WAITERS.get(key);
           WaitingClient me = new WaitingClient(client, clientOutput, key);
-          synchronized (q) {
-            q.addLast(me);
-          }
+          synchronized (q) { q.addLast(me); }
 
-          // bucla de asteptare prin polling scurt (fara sa modificam rpush)
+          // calculeaza deadline doar daca timeoutSec > 0
+          final boolean hasDeadline = timeoutSec > 0.0;
+          final long deadlineNs = hasDeadline ? (System.nanoTime() + (long)(timeoutSec * 1_000_000_000L)) : Long.MAX_VALUE;
+
+          // asteptare prin polling scurt (nu modificam rpush)
           while (true) {
             boolean iAmHead;
             synchronized (q) { iAmHead = (q.peekFirst() == me); }
 
             if (iAmHead) {
-              list = listsStore.get(key);
+              List<String> l = listsStore.get(key);
               String val = null;
-              if (list != null) {
-                synchronized (list) {
-                  if (!list.isEmpty()) {
-                    val = list.remove(0); // lpop
-                    if (list.isEmpty()) listsStore.remove(key);
+              if (l != null) {
+                synchronized (l) {
+                  if (!l.isEmpty()) {
+                    val = l.remove(0); // lpop
+                    if (l.isEmpty()) listsStore.remove(key);
                   }
                 }
               }
               if (val != null) {
-                synchronized (q) { q.pollFirst(); } // ies din coada
+                synchronized (q) { q.pollFirst(); } // ies din coada (fifo)
                 try {
                   clientOutput.write("*2\r\n");
                   clientOutput.write("$" + key.length() + "\r\n" + key + "\r\n");
@@ -363,19 +351,15 @@ public class Main {
               }
             }
 
-            // verifica timeout-ul (doar daca e nenul)
-            if (System.nanoTime() >= deadlineNs) {
-              // scot clientul din coada (daca inca este acolo) si trimit null array
+            // daca avem timeout nenul si a expirat, intoarcem null array si iesim
+            if (hasDeadline && System.nanoTime() >= deadlineNs) {
               synchronized (q) { q.remove(me); }
-              try {
-                clientOutput.write("*-1\r\n"); // null array conform cerintei
-                clientOutput.flush();
-              } catch (IOException ignore) {}
+              try { clientOutput.write("*-1\r\n"); clientOutput.flush(); } catch (IOException ignore) {}
               currentArrayCount = -1;
               break;
             }
 
-            // mic sleep ca sa nu ardem CPU
+            // sleep mic ca sa nu mancam cpu
             try { Thread.sleep(10); } catch (InterruptedException ignore) {}
 
             // daca socketul s-a inchis, curata si iesi
