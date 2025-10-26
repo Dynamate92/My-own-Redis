@@ -44,6 +44,7 @@ public class Main {
       Map<String, List<String>> listsStore = new HashMap<>();
       listsStore = SHARED_LIST;
       Set<String> streamKeys = new HashSet<>();
+      Map<String, String> lastStreamId = new HashMap<>();
       String content;
       int currentArrayCount = -1;
       while ((content = clientInput.readLine()) != null) {
@@ -397,25 +398,85 @@ public class Main {
           clientOutput.flush();
           currentArrayCount = -1;
         } else if (content.equalsIgnoreCase("xadd")) {
-          clientInput.readLine();
-          String key = clientInput.readLine();
+          // format: XADD key id field value [field value ...]
+          // in aceasta etapa: id este explicit (ex: "1-2"), fara auto-id.
 
-          clientInput.readLine();
-          String id = clientInput.readLine();
+          // citeste key
+          clientInput.readLine();              // $len key
+          String key = clientInput.readLine(); // key
 
+          // citeste id
+          clientInput.readLine();              // $len id
+          String id = clientInput.readLine();  // de forma "ms-seq"
+
+          // consuma restul argumentelor (field/value perechi)
           int remaining = Math.max(0, currentArrayCount - 3);
-
           for (int i = 0; i < remaining; i++) {
-            clientInput.readLine();
-            String arg = clientInput.readLine();
+            clientInput.readLine();    // $len
+            clientInput.readLine();    // field sau value
           }
 
+          // === validare id ===
+          // 0-0 este mereu invalid
+          if ("0-0".equals(id)) {
+            clientOutput.write("-ERR The ID specified in XADD must be greater than 0-0\r\n");
+            clientOutput.flush();
+            currentArrayCount = -1;
+            continue;
+          }
+
+          // parseaza id curent
+          long curMs, curSeq;
+          try {
+            int dash = id.indexOf('-');
+            if (dash <= 0 || dash == id.length() - 1) throw new NumberFormatException();
+            curMs = Long.parseLong(id.substring(0, dash));
+            curSeq = Long.parseLong(id.substring(dash + 1));
+          } catch (NumberFormatException nfe) {
+            // pentru etapa asta, tratam format gresit ca „smaller/equal”
+            clientOutput.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+            clientOutput.flush();
+            currentArrayCount = -1;
+            continue;
+          }
+
+          // daca streamul are deja un ultim id, comparam strict
+          String lastId = lastStreamId.get(key);
+          if (lastId != null) {
+            try {
+              int d2 = lastId.indexOf('-');
+              long lastMs = Long.parseLong(lastId.substring(0, d2));
+              long lastSeq = Long.parseLong(lastId.substring(d2 + 1));
+
+              boolean smallerOrEqual =
+                      (curMs < lastMs) ||
+                              (curMs == lastMs && curSeq <= lastSeq);
+
+              if (smallerOrEqual) {
+                clientOutput.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+                clientOutput.flush();
+                currentArrayCount = -1;
+                continue;
+              }
+            } catch (Exception ignore) {
+              // daca lastId ar fi corupt (nu ar trebui), tratam defensiv ca valid
+            }
+          } else {
+            // stream gol: id trebuie sa fie > 0-0 (deja am verificat 0-0 exact)
+            // optional: poti forta curMs>=0 si curSeq>=1, dar nu e cerut explicit
+          }
+
+          // marcheaza cheia ca stream si memoreaza ultimul id
           streamKeys.add(key);
+          lastStreamId.put(key, id);
+
+          // raspuns: id ca bulk string
           clientOutput.write("$" + id.length() + "\r\n" + id + "\r\n");
           clientOutput.flush();
 
           currentArrayCount = -1;
         }
+
       }
     } catch (IOException e) {
       System.out.println("Error" + e.getMessage());
