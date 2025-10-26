@@ -398,55 +398,92 @@ public class Main {
           clientOutput.flush();
           currentArrayCount = -1;
         } else if (content.equalsIgnoreCase("xadd")) {
-          // format: XADD key id field value [field value ...]
-          // in aceasta etapa: id este explicit (ex: "1-2"), fara auto-id.
+          // XADD key id field value [field value ...]
+          // Acceptă:  "ms-seq" (explicit)  sau  "ms-*" (auto seq) în acest stage.
 
-          // citeste key
+          // key
           clientInput.readLine();              // $len key
           String key = clientInput.readLine(); // key
 
-          // citeste id
+          // id (poate fi "123-*", sau "123-4")
           clientInput.readLine();              // $len id
-          String id = clientInput.readLine();  // de forma "ms-seq"
+          String id = clientInput.readLine();
 
-          // consuma restul argumentelor (field/value perechi)
+          // consumă perechile field/value (nu le folosim în acest stage)
           int remaining = Math.max(0, currentArrayCount - 3);
           for (int i = 0; i < remaining; i++) {
-            clientInput.readLine();    // $len
-            clientInput.readLine();    // field sau value
+            clientInput.readLine(); // $len
+            clientInput.readLine(); // field OR value
           }
 
-          // === validare id ===
-          // 0-0 este mereu invalid
-          if ("0-0".equals(id)) {
-            clientOutput.write("-ERR The ID specified in XADD must be greater than 0-0\r\n");
-            clientOutput.flush();
-            currentArrayCount = -1;
-            continue;
-          }
+          String newId;
 
-          // parseaza id curent
-          long curMs, curSeq;
-          try {
-            int dash = id.indexOf('-');
-            if (dash <= 0 || dash == id.length() - 1) throw new NumberFormatException();
-            curMs = Long.parseLong(id.substring(0, dash));
-            curSeq = Long.parseLong(id.substring(dash + 1));
-          } catch (NumberFormatException nfe) {
-            // pentru etapa asta, tratam format gresit ca „smaller/equal”
-            clientOutput.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
-            clientOutput.flush();
-            currentArrayCount = -1;
-            continue;
-          }
-
-          // daca streamul are deja un ultim id, comparam strict
-          String lastId = lastStreamId.get(key);
-          if (lastId != null) {
+          // === cazul: auto-seq, format "ms-*" ===
+          if (id.endsWith("-*")) {
+            String msStr = id.substring(0, id.length() - 2); // tot ce e inainte de "-*"
+            long ms;
             try {
-              int d2 = lastId.indexOf('-');
-              long lastMs = Long.parseLong(lastId.substring(0, d2));
-              long lastSeq = Long.parseLong(lastId.substring(d2 + 1));
+              ms = Long.parseLong(msStr);
+            } catch (NumberFormatException nfe) {
+              clientOutput.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+              clientOutput.flush();
+              currentArrayCount = -1;
+              continue;
+            }
+
+            // determină secvența conform regulilor
+            long seq;
+            String last = lastStreamId.get(key);
+            if (last == null) {
+              // stream gol
+              seq = (ms == 0) ? 1 : 0;
+            } else {
+              int d = last.indexOf('-');
+              long lastMs = Long.parseLong(last.substring(0, d));
+              long lastSeq = Long.parseLong(last.substring(d + 1));
+
+              if (ms < lastMs) {
+                clientOutput.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+                clientOutput.flush();
+                currentArrayCount = -1;
+                continue;
+              } else if (ms == lastMs) {
+                seq = lastSeq + 1;
+              } else {
+                // ms > lastMs, stream "gol" pentru ms-ul ăsta
+                seq = (ms == 0) ? 1 : 0;
+              }
+            }
+
+            newId = ms + "-" + seq;
+
+          } else {
+            // === cazul: explicit "ms-seq" (validarea de la etapa precedentă) ===
+            if ("0-0".equals(id)) {
+              clientOutput.write("-ERR The ID specified in XADD must be greater than 0-0\r\n");
+              clientOutput.flush();
+              currentArrayCount = -1;
+              continue;
+            }
+
+            long curMs, curSeq;
+            try {
+              int dash = id.indexOf('-');
+              if (dash <= 0 || dash == id.length() - 1) throw new NumberFormatException();
+              curMs = Long.parseLong(id.substring(0, dash));
+              curSeq = Long.parseLong(id.substring(dash + 1));
+            } catch (NumberFormatException nfe) {
+              clientOutput.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+              clientOutput.flush();
+              currentArrayCount = -1;
+              continue;
+            }
+
+            String last = lastStreamId.get(key);
+            if (last != null) {
+              int d = last.indexOf('-');
+              long lastMs = Long.parseLong(last.substring(0, d));
+              long lastSeq = Long.parseLong(last.substring(d + 1));
 
               boolean smallerOrEqual =
                       (curMs < lastMs) ||
@@ -458,20 +495,16 @@ public class Main {
                 currentArrayCount = -1;
                 continue;
               }
-            } catch (Exception ignore) {
-              // daca lastId ar fi corupt (nu ar trebui), tratam defensiv ca valid
             }
-          } else {
-            // stream gol: id trebuie sa fie > 0-0 (deja am verificat 0-0 exact)
-            // optional: poti forta curMs>=0 si curSeq>=1, dar nu e cerut explicit
+            newId = id;
           }
 
-          // marcheaza cheia ca stream si memoreaza ultimul id
+          // marchează tipul și salvează ultimul id
           streamKeys.add(key);
-          lastStreamId.put(key, id);
+          lastStreamId.put(key, newId);
 
-          // raspuns: id ca bulk string
-          clientOutput.write("$" + id.length() + "\r\n" + id + "\r\n");
+          // răspuns: ID ca bulk string
+          clientOutput.write("$" + newId.length() + "\r\n" + newId + "\r\n");
           clientOutput.flush();
 
           currentArrayCount = -1;
