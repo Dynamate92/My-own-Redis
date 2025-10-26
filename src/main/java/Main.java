@@ -43,6 +43,7 @@ public class Main {
       Map<String, Long> expiries = new HashMap<>();
       Map<String, List<String>> listsStore = new HashMap<>();
       listsStore = SHARED_LIST;
+      Set<String> streamKeys = new HashSet<>();
       String content;
       int currentArrayCount = -1;
       while ((content = clientInput.readLine()) != null) {
@@ -387,14 +388,34 @@ public class Main {
             type = "string";
           } else if (listsStore.containsKey(key)) {
             type = "list";
+          } else if (streamKeys.contains(key)){
+            type = "stream";
           } else {
             type = "none";
           }
           clientOutput.write("+" + type + "\r\n");
           clientOutput.flush();
           currentArrayCount = -1;
-        }
+        } else if (content.equalsIgnoreCase("xadd")) {
+          clientInput.readLine();
+          String key = clientInput.readLine();
 
+          clientInput.readLine();
+          String id = clientInput.readLine();
+
+          int remaining = Math.max(0, currentArrayCount - 3);
+
+          for (int i = 0; i < remaining; i++) {
+            clientInput.readLine();
+            String arg = clientInput.readLine();
+          }
+
+          streamKeys.add(key);
+          clientOutput.write("$" + id.length() + "\r\n" + id + "\r\n");
+          clientOutput.flush();
+
+          currentArrayCount = -1;
+        }
       }
     } catch (IOException e) {
       System.out.println("Error" + e.getMessage());
