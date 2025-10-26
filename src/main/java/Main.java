@@ -371,6 +371,28 @@ public class Main {
           }
 
           continue;
+        } else if (content.equalsIgnoreCase("type")) {
+          // *2\r\n
+          // $4\r\n
+          // TYPE\r\n
+          // $<len>\r\n
+          // <key>\r\n
+
+          clientInput.readLine();
+          String key = clientInput.readLine();
+
+          String type;
+
+          if(commandsStore.containsKey(key)) {
+            type = "string";
+          } else if (listsStore.containsKey(key)) {
+            type = "list";
+          } else {
+            type = "none";
+          }
+          clientOutput.write("+" + type + "\r\n");
+          clientOutput.flush();
+          currentArrayCount = -1;
         }
 
       }
